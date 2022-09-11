@@ -1,0 +1,12 @@
+{
+  "name": "andorcss",
+  "version": "1.0.0",
+  "description": "CSS framework for fastly building user interface",
+  "bin": "./cli.js",
+  "keywords": ["css", "framework", "web"],
+  "author": "Andrey Orlov",
+  "homepage": "https://andorcode.ru",
+  "repository": "github:andorcode/andorcss",
+  "license": "MIT",
+  "type": "module"
+}
