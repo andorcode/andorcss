@@ -34,7 +34,7 @@ const commands = {
  */
 function init() {
 	const from_path = path.resolve(argv[1], '../config.js');
-	const to_path = './ioncss.config.mjs';
+	const to_path = './andorcss.config.mjs';
 	if (fs.existsSync(to_path)) {
 		console.log('Файл конфигурации уже существует');
 	} else {
@@ -42,7 +42,7 @@ function init() {
 			if (err) {
 				console.error(err);
 			} else {
-				console.log('Файл конфигурации ioncss.config.mjs успешно создан');
+				console.log('Файл конфигурации andorcss.config.mjs успешно создан');
 			}
 		});
 	}
@@ -56,8 +56,8 @@ async function generate() {
 	const template = (await import('./template.js')).default;
 	const { version } = JSON.parse(fs.readFileSync(path.resolve(argv[1], '../package.json'), 'utf8'));
 
-	if (fs.existsSync('./ioncss.config.mjs')) {
-		const user_config = (await import(pathToFileURL('./ioncss.config.mjs').href)).default;
+	if (fs.existsSync('./andorcss.config.mjs')) {
+		const user_config = (await import(pathToFileURL('./andorcss.config.mjs').href)).default;
 		for (let key in user_config) config[key] = user_config[key];
 	}
 
