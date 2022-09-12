@@ -1,4 +1,4 @@
-module.exports = {
+export default {
 	'layout_path': './layout.css',
 	'content': ['./'],
 	'content_ext': ['html', 'php'],
