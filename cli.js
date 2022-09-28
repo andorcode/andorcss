@@ -18,9 +18,9 @@ const commands = {
 	},
 	generate: {
 		run: generate,
-		desc: 'Генерация CSS файла',
+		desc: 'Генерация CSS',
 		args: {
-			'-o': 'Оптимизация файла',
+			'-o': 'Оптимизация CSS',
 		}
 	},
 	help: {
@@ -28,6 +28,14 @@ const commands = {
 		desc: 'Помощь',
 	},
 };
+
+// Выполнение команды
+if (commands[cmd]) {
+	commands[cmd].run();
+} else {
+	console.error('Команда ' + cmd + ' не найдена.\n');
+	help();
+}
 
 /**
  * Создание файла конфигурации
@@ -52,16 +60,16 @@ function init() {
  * Генерация CSS файла
  */
 async function generate() {
-	const config = (await import('./config.js')).default;
 	const template = (await import('./template.js')).default;
 	const { version } = JSON.parse(fs.readFileSync(path.resolve(argv[1], '../package.json'), 'utf8'));
 
-	if (fs.existsSync('./andorcss.config.mjs')) {
-		const user_config = (await import(pathToFileURL('./andorcss.config.mjs').href)).default;
-		for (let key in user_config) config[key] = user_config[key];
-	}
+	if (!fs.existsSync('./andorcss.config.mjs')) return console.error('Файл конфигурации не найден. Запустите команду init для его создания.');
 
-	if (config.template) for (let prop in config.template) template[prop] = config.template[prop];
+	const config = (await import(pathToFileURL('./andorcss.config.mjs').href)).default;
+
+	if (config.template) {
+		for (let prop in config.template) template[prop] = config.template[prop];
+	}
 
 	for (let prop in template) {
 		if (typeof template[prop] === 'function') template[prop] = template[prop]();
@@ -70,6 +78,17 @@ async function generate() {
 	if (config.extend) {
 		for (let prop in config.extend) {
 			for (let key in config.extend[prop]) template[prop][key] = config.extend[prop][key];
+		}
+	}
+
+	let optimize = false;
+	let content = '';
+	if (args.indexOf('-o') != -1) {
+		optimize = true;
+		if (config.content && config.content_ext) {
+			for (let i = 0; i < config.content.length; i++) {
+				find_files(config.content[i]);
+			}
 		}
 	}
 
@@ -96,61 +115,104 @@ async function generate() {
 		'z-index': 'z',
 	};
 
-	const rules = {};
+	const classes = {};
+	const class_groups = {};
+	let css_out = '/**! @andorcode/andorcss v' + version + ' */\n*,::after,::before{box-sizing:border-box;border:0 solid currentColor}html{line-height:normal;-webkit-text-size-adjust:100%;-webkit-tap-highlight-color:transparent;height:100%;-moz-tab-size:4;tab-size:4;font-family:' + (config.main_font ? '"' + config.main_font + '",' : '') + 'Arial,Helvetica,sans-serif}body{margin:0;line-height:inherit;min-height:100%}hr{height:0;color:inherit;border-top-width:1px}h1,h2,h3,h4,h5,h6{font-size:inherit;font-weight:inherit;margin:0}a{color:inherit;text-decoration:inherit}b,strong{font-weight:bolder}code,kbd,pre,samp{font-family:ui-monospace,Consolas,monospace;font-size:1em}small{font-size:80%}sub,sup{font-size:75%;line-height:0;position:relative;vertical-align:baseline}sub{bottom:-.25em}sup{top:-.5em}table{text-indent:0;border-color:inherit;border-collapse:collapse}button,input,optgroup,select,textarea{font-family:inherit;font-size:100%;font-weight:inherit;line-height:inherit;color:inherit;margin:0;padding:0;outline:0}button,select{text-transform:none}[type=button],[type=reset],[type=submit],button{-webkit-appearance:button;background:0 0;cursor:pointer}:-moz-focusring{outline:auto}:-moz-ui-invalid{box-shadow:none}progress{vertical-align:baseline}::-webkit-inner-spin-button,::-webkit-outer-spin-button{height:auto}[type=search]{-webkit-appearance:textfield;outline-offset:-2px}::-webkit-search-decoration{-webkit-appearance:none}::-webkit-file-upload-button{-webkit-appearance:button;font:inherit}summary{display:list-item}blockquote,dd,dl,fieldset,figure,hr,legend,menu,ol,p,pre,ul{margin:0;padding:0}menu,ol,ul{list-style:none}textarea{resize:vertical}:disabled{cursor:default}audio,canvas,embed,iframe,img,object,svg,video{display:block}img,video{max-width:100%;height:auto}[hidden]{display:none!important}';
+
+	if (config.colors) {
+		let vars_out = '';
+		const props = ['color', 'background-color', 'border-color'];
+		for (let key in config.colors) {
+			const color = config.colors[key];
+			if (vars_out) vars_out += ';';
+			vars_out += '--' + key + ':' + color;
+
+			for (let i = 0; i < props.length; i++) {
+				const prop = props[i];
+				let px = (prefixes[prop] ? prefixes[prop] : prop);
+				let cl = px + '-' + key;
+				let clh = 'hover-' + px + '-' + key;
+				classes[cl] = '{' + prop + ':var(--' + key + ')}';
+				class_groups[cl] = [clh + ':hover'];
+			}
+		}
+		css_out += ':root{' + vars_out + '}';
+	}
+
+	if (config.fonts) {
+		for (let key in config.fonts) {
+			for (let i = 0; i < config.fonts[key].length; i++) {
+				const font = config.fonts[key][i];
+				css_out += '@font-face{font-family:"' + key + '"';
+				if (font.display) css_out += ';font-display:"' + font.display + '"';
+				let src_out = '';
+				for (let j = 0; j < font.src.length; j++) {
+					if (src_out) src_out += ',';
+					let ext = font.src[j].split('.'); ext = ext[ext.length - 1];
+					let format = ext;
+					if (ext === 'ttf') {
+						format = 'truetype';
+					} else if (ext === 'otf') {
+						format = 'opentype';
+					}
+					src_out += 'url("' + font.src[j] + '") format("' + format + '")';
+				}
+				css_out += ';src:' + src_out;
+				if (font.weight) css_out += ';font-weight:' + font.weight;
+				if (font.style) css_out += ';font-style:' + font.style;
+				css_out += '}';
+			}
+		}
+	}
 
 	const handlers = {
 		'default': function (prop) {
 			const values = template[prop];
 			for (let key in values) {
-				let cl = [];
-				if (prefixes[prop]) cl.push(prefixes[prop]);
-				if (key) cl.push(key);
+				let cl = (prefixes[prop] ? prefixes[prop] : '');
+				if (key) cl += (cl.length ? '-' : '') + key;
 				if (!cl.length) continue;
-				rules['.' + cl.join('-')] = prop + ':' + values[key];
+				classes[cl] = '{' + prop + ':' + values[key] + '}';
 			}
 		},
 		'margin': function (prop) {
 			const values = template[prop];
 			for (let key in values) {
-				let cl = (prefixes[prop] ? prefixes[prop] : 'm');
-				rules['.' + cl + '-' + key + ',.' + cl + 'y-' + key + ',.' + cl + 't-' + key] = prop + '-top:' + values[key];
-				rules['.' + cl + '-' + key + ',.' + cl + 'y-' + key + ',.' + cl + 'b-' + key] = prop + '-bottom:' + values[key];
-				rules['.' + cl + '-' + key + ',.' + cl + 'x-' + key + ',.' + cl + 'l-' + key] = prop + '-left:' + values[key];
-				rules['.' + cl + '-' + key + ',.' + cl + 'x-' + key + ',.' + cl + 'r-' + key] = prop + '-right:' + values[key];
-			}
-		},
-		'padding': function (prop) {
-			const values = template[prop];
-			for (let key in values) {
-				let cl = (prefixes[prop] ? prefixes[prop] : 'p');
-				rules['.' + cl + '-' + key + ',.' + cl + 'y-' + key + ',.' + cl + 't-' + key] = prop + '-top:' + values[key];
-				rules['.' + cl + '-' + key + ',.' + cl + 'y-' + key + ',.' + cl + 'b-' + key] = prop + '-bottom:' + values[key];
-				rules['.' + cl + '-' + key + ',.' + cl + 'x-' + key + ',.' + cl + 'l-' + key] = prop + '-left:' + values[key];
-				rules['.' + cl + '-' + key + ',.' + cl + 'x-' + key + ',.' + cl + 'r-' + key] = prop + '-right:' + values[key];
+				let px = (prefixes[prop] ? prefixes[prop] : prop);
+				classes[px + '-' + key] = '{' + prop + ':' + values[key] + '}';
+				classes[px + 'y-' + key] = '{' + prop + '-top:' + values[key] + ';' + prop + '-bottom:' + values[key] + '}';
+				classes[px + 'x-' + key] = '{' + prop + '-left:' + values[key] + ';' + prop + '-right:' + values[key] + '}';
+				classes[px + 't-' + key] = '{' + prop + '-top:' + values[key] + '}';
+				classes[px + 'b-' + key] = '{' + prop + '-bottom:' + values[key] + '}';
+				classes[px + 'l-' + key] = '{' + prop + '-left:' + values[key] + '}';
+				classes[px + 'r-' + key] = '{' + prop + '-right:' + values[key] + '}';
 			}
 		},
 		'gap': function (prop) {
 			const values = template[prop];
 			for (let key in values) {
-				let cl = (prefixes[prop] ? prefixes[prop] : 'g');
-				rules['.' + cl + '-' + key + ',.' + cl + 'y-' + key] = 'row-' + prop + ':' + values[key];
-				rules['.' + cl + '-' + key + ',.' + cl + 'x-' + key] = 'column-' + prop + ':' + values[key];
+				let px = (prefixes[prop] ? prefixes[prop] : prop);
+				classes[px + '-' + key] = '{' + prop + ':' + values[key] + '}';
+				classes[px + 'y-' + key] = '{row-' + prop + ':' + values[key] + '}';
+				classes[px + 'x-' + key] = '{column-' + prop + ':' + values[key] + '}';
 			}
 		},
 		'border': function (prop) {
 			const values = template[prop];
 			for (let key in values) {
-				let cl = (prefixes[prop] ? prefixes[prop] : 'b');
-				rules['.' + cl + '-' + key + ',.' + cl + 'y-' + key + ',.' + cl + 't-' + key] = prop + '-top-width:' + values[key];
-				rules['.' + cl + '-' + key + ',.' + cl + 'y-' + key + ',.' + cl + 'b-' + key] = prop + '-bottom-width:' + values[key];
-				rules['.' + cl + '-' + key + ',.' + cl + 'x-' + key + ',.' + cl + 'l-' + key] = prop + '-left-width:' + values[key];
-				rules['.' + cl + '-' + key + ',.' + cl + 'x-' + key + ',.' + cl + 'r-' + key] = prop + '-right-width:' + values[key];
+				let px = (prefixes[prop] ? prefixes[prop] : prop);
+				classes[px + '-' + key] = '{' + prop + ':' + values[key] + '}';
+				classes[px + 'y-' + key] = '{' + prop + '-top-width:' + values[key] + ';' + prop + '-bottom-width:' + values[key] + '}';
+				classes[px + 'x-' + key] = '{' + prop + '-left-width:' + values[key] + ';' + prop + '-right-width:' + values[key] + '}';
+				classes[px + 't-' + key] = '{' + prop + '-top-width:' + values[key] + '}';
+				classes[px + 'b-' + key] = '{' + prop + '-bottom-width:' + values[key] + '}';
+				classes[px + 'l-' + key] = '{' + prop + '-left-width:' + values[key] + '}';
+				classes[px + 'r-' + key] = '{' + prop + '-right-width:' + values[key] + '}';
 			}
 		},
 		'@keyframes': function (prop) {
 			const values = template[prop];
 			for (let key in values) {
-				if (!key) continue;
 				let out = '';
 				for (let pos in values[key]) {
 					let styles = '';
@@ -160,62 +222,28 @@ async function generate() {
 					}
 					out += pos + '{' + styles + '}';
 				}
-				rules['@keyframes ' + key] = out;
-			}
-		},
-		'colors': function (prop) {
-			const values = template[prop];
-			rules[':root'] = '';
-			const props = ['color', 'background-color', 'border-color'];
-
-			for (let key in values) {
-				const color = values[key];
-				if (rules[':root']) rules[':root'] += ';';
-				rules[':root'] += '--' + key + ':' + color;
-
-				for (let i = 0; i < props.length; i++) {
-					const prop = props[i];
-					let cl = (prefixes[prop] ? prefixes[prop] : prop);
-					rules['.' + cl + '-' + key + ',.hover-' + cl + '-' + key + ':hover'] = prop + ':var(--' + key + ')';
-				}
+				css_out += '@keyframes ' + key + '{' + out + '}';
 			}
 		},
 		'inset': function (prop) {
 			const values = template[prop];
 			for (let key in values) {
-				let cl = (prefixes[prop] ? prefixes[prop] : 'inset');
-				rules['.' + cl] = 'top:' + values[key] + ';' + 'bottom:' + values[key] + ';' + 'left:' + values[key] + ';' + 'right:' + values[key];
+				let cl = (prefixes[prop] ? prefixes[prop] : prop) + '-' + key;
+				classes[cl] = '{top:' + values[key] + ';' + 'bottom:' + values[key] + ';' + 'left:' + values[key] + ';' + 'right:' + values[key] + '}';
 			}
 		},
 		'top': function (prop) {
 			const values = template[prop];
 			for (let key in values) {
-				let cl = (prefixes[prop] ? prefixes[prop] : prop);
-				rules['.' + cl] = prop + ':' + values[key];
-			}
-		},
-		'bottom': function (prop) {
-			const values = template[prop];
-			for (let key in values) {
-				let cl = (prefixes[prop] ? prefixes[prop] : prop);
-				rules['.' + cl] = prop + ':' + values[key];
-			}
-		},
-		'left': function (prop) {
-			const values = template[prop];
-			for (let key in values) {
-				let cl = (prefixes[prop] ? prefixes[prop] : prop);
-				rules['.' + cl] = prop + ':' + values[key];
-			}
-		},
-		'right': function (prop) {
-			const values = template[prop];
-			for (let key in values) {
-				let cl = (prefixes[prop] ? prefixes[prop] : prop);
-				rules['.' + cl] = prop + ':' + values[key];
+				let cl = (prefixes[prop] ? prefixes[prop] : prop) + '-' + key;
+				classes[cl] = '{' + prop + ':' + values[key] + '}';
 			}
 		},
 	}
+	handlers['padding'] = handlers['margin'];
+	handlers['bottom'] = handlers['top'];
+	handlers['left'] = handlers['top'];
+	handlers['right'] = handlers['top'];
 
 	// Выполнение обработчиков
 	for (let prop in template) {
@@ -223,100 +251,79 @@ async function generate() {
 		handlers[handler](prop);
 	}
 
-	let out = '/**! @andorcode/andorcss v' + version + ' */\n*,::after,::before{box-sizing:border-box;border:0 solid currentColor}html{line-height:normal;-webkit-text-size-adjust:100%;-webkit-tap-highlight-color:transparent;height:100%;-moz-tab-size:4;tab-size:4;font-family:var(--font,Roboto),Arial,Helvetica,sans-serif}body{margin:0;line-height:inherit;min-height:100%}hr{height:0;color:inherit;border-top-width:1px}h1,h2,h3,h4,h5,h6{font-size:inherit;font-weight:inherit;margin:0}a{color:inherit;text-decoration:inherit}b,strong{font-weight:bolder}code,kbd,pre,samp{font-family:ui-monospace,Consolas,monospace;font-size:1em}small{font-size:80%}sub,sup{font-size:75%;line-height:0;position:relative;vertical-align:baseline}sub{bottom:-.25em}sup{top:-.5em}table{text-indent:0;border-color:inherit;border-collapse:collapse}button,input,optgroup,select,textarea{font-family:inherit;font-size:100%;font-weight:inherit;line-height:inherit;color:inherit;margin:0;padding:0;outline:0}button,select{text-transform:none}[type=button],[type=reset],[type=submit],button{-webkit-appearance:button;background:0 0;cursor:pointer}:-moz-focusring{outline:auto}:-moz-ui-invalid{box-shadow:none}progress{vertical-align:baseline}::-webkit-inner-spin-button,::-webkit-outer-spin-button{height:auto}[type=search]{-webkit-appearance:textfield;outline-offset:-2px}::-webkit-search-decoration{-webkit-appearance:none}::-webkit-file-upload-button{-webkit-appearance:button;font:inherit}summary{display:list-item}blockquote,dd,dl,fieldset,figure,hr,legend,menu,ol,p,pre,ul{margin:0;padding:0}menu,ol,ul{list-style:none}textarea{resize:vertical}:disabled{cursor:default}audio,canvas,embed,iframe,img,object,svg,video{display:block}img,video{max-width:100%;height:auto}[hidden]{display:none!important}';
-
-	if (args.indexOf('-o') != -1) {
-		const content = [];
-
-		if (config.content && config.content_ext) {
-			function find_files(path) {
-				const files = fs.readdirSync(path, { withFileTypes: true });
-				for (let i = 0; i < files.length; i++) {
-					if (files[i].isDirectory()) {
-						find_files(path + files[i].name + '/');
-					} else if (files[i].isFile()) {
-						let ext = files[i].name.split('.');
-						ext = ext[ext.length - 1];
-						if (config.content_ext.indexOf(ext) != -1) content.push(fs.readFileSync(path + files[i].name, 'utf8'));
-					}
+	for (let cl in classes) {
+		let cl_full = '';
+		if (!optimize || (optimize && find_class(cl))) cl_full = cl;
+		if (class_groups[cl]) {
+			for (let i = 0; i < class_groups[cl].length; i++) {
+				let clg = class_groups[cl][i];
+				if (optimize && !find_class(clg.split(':')[0])) continue;
+				if (cl_full) {
+					cl_full += ',.' + clg;
+				} else {
+					cl_full += clg;
 				}
 			}
-			for (let i = 0; i < config.content.length; i++) {
-				find_files(config.content[i]);
-			}
 		}
+		if (cl_full) css_out += '.' + cl_full + classes[cl];
+	}
 
-		for (let r in rules) {
-			if (r.slice(0, 1) === '.') {
-				let cl = r.split(',');
-				let finded = false;
-				for (let i = 0; i < cl.length; i++) {
-					let find = cl[i].slice(1);
-					for (let j = 0; j < content.length; j++) {
-						if (content[j].indexOf(find) != -1) {
-							finded = true;
-							break;
+	if (config.media) {
+		for (let key in config.media) {
+			let media_out = '';
+			for (let cl in classes) {
+				let new_cl = key + '-' + cl;
+				let cl_full = '';
+				if (!optimize || (optimize && find_class(new_cl))) cl_full = new_cl;
+				if (class_groups[cl]) {
+					for (let i = 0; i < class_groups[cl].length; i++) {
+						let clg = key + '-' + class_groups[cl][i];
+						if (optimize && !find_class(clg.split(':')[0])) continue;
+						if (cl_full) {
+							cl_full += ',.' + clg;
+						} else {
+							cl_full += clg;
 						}
 					}
-					if (finded) break;
 				}
-				if (finded) out += r + '{' + rules[r] + '}';
-			} else {
-				out += r + '{' + rules[r] + '}';
+				if (cl_full) media_out += '.' + cl_full + classes[cl];
 			}
-		}
-
-		if (config.media) {
-			for (let key in config.media) {
-				let media_out = '';
-				for (let r in rules) {
-					if (r.slice(0, 1) !== '.') continue;
-					let cl = r.split(',');
-					let finded = false;
-					for (let i = 0; i < cl.length; i++) {
-						cl[i] = '.' + key + '-' + cl[i].slice(1);
-						let find = cl[i].slice(1);
-						for (let j = 0; j < content.length; j++) {
-							if (content[j].indexOf(find) != -1) {
-								finded = true;
-								break;
-							}
-						}
-						if (finded) break;
-					}
-					if (finded) media_out += cl.join(',') + '{' + rules[r] + '}';
-				}
-				if (media_out) out += '@media (max-width:' + config.media[key] + '){' + media_out + '}';
-			}
-		}
-	} else {
-		for (let r in rules) {
-			out += r + '{' + rules[r] + '}';
-		}
-
-		if (config.media) {
-			for (let key in config.media) {
-				let media_out = '';
-				for (let r in rules) {
-					if (r.slice(0, 1) !== '.') continue;
-					let cl = r.split(',');
-					for (let i = 0; i < cl.length; i++) {
-						cl[i] = '.' + key + '-' + cl[i].slice(1);
-					}
-					media_out += cl.join(',') + '{' + rules[r] + '}';
-				}
-				if (media_out) out += '@media (max-width:' + config.media[key] + '){' + media_out + '}';
-			}
+			if (media_out) css_out += '@media (max-width:' + config.media[key] + '){' + media_out + '}';
 		}
 	}
 
-	fs.writeFile(config.layout_path, out, function (err) {
+	// Создание файла стилей
+	fs.writeFile((optimize ? config.layout_path.replace('.css', '.min.css') : config.layout_path), css_out, function (err) {
 		if (err) {
 			console.error(err);
 		} else {
 			console.log('Файл макета успешно сгенерирован');
 		}
 	});
+
+	/**
+	 * Поиск файлов в папке
+	 */
+	function find_files(path) {
+		const files = fs.readdirSync(path, { withFileTypes: true });
+		for (let i = 0; i < files.length; i++) {
+			if (files[i].isDirectory()) {
+				find_files(path + files[i].name + '/');
+			} else if (files[i].isFile()) {
+				let ext = files[i].name.split('.');
+				ext = ext[ext.length - 1];
+				if (config.content_ext.indexOf(ext) != -1) content += fs.readFileSync(path + files[i].name, 'utf8');
+			}
+		}
+	}
+
+	/**
+	 * Поиск класса в файлах
+	 */
+	function find_class(cl) {
+		const reg = new RegExp('["\' ]' + cl + '["\' ]');
+		return reg.test(content);
+	}
 }
 
 /**
@@ -333,12 +340,4 @@ function help() {
 		}
 	}
 	console.log(out);
-}
-
-// Выполнение команды
-if (commands[cmd]) {
-	commands[cmd].run();
-} else {
-	console.error('Команда ' + cmd + ' не найдена.\n');
-	help();
 }

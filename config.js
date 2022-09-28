@@ -8,10 +8,9 @@ export default {
 		'md': '768px',
 		'sm': '512px',
 	},
-	'template': {
-		'colors': {
-			'black': '#000',
-			'white': '#fff',
-		},
+	'colors': {
+		'black': '#000',
+		'white': '#fff',
 	},
+	'main_font': 'Roboto',
 }
