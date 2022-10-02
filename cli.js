@@ -144,7 +144,7 @@ async function generate() {
 			for (let i = 0; i < config.fonts[key].length; i++) {
 				const font = config.fonts[key][i];
 				css_out += '@font-face{font-family:"' + key + '"';
-				if (font.display) css_out += ';font-display:"' + font.display + '"';
+				if (font.display) css_out += ';font-display:' + font.display + '';
 				let src_out = '';
 				for (let j = 0; j < font.src.length; j++) {
 					if (src_out) src_out += ',';
@@ -201,13 +201,13 @@ async function generate() {
 			const values = template[prop];
 			for (let key in values) {
 				let px = (prefixes[prop] ? prefixes[prop] : prop);
-				classes[px + '-' + key] = '{' + prop + ':' + values[key] + '}';
-				classes[px + 'y-' + key] = '{' + prop + '-top-width:' + values[key] + ';' + prop + '-bottom-width:' + values[key] + '}';
-				classes[px + 'x-' + key] = '{' + prop + '-left-width:' + values[key] + ';' + prop + '-right-width:' + values[key] + '}';
-				classes[px + 't-' + key] = '{' + prop + '-top-width:' + values[key] + '}';
-				classes[px + 'b-' + key] = '{' + prop + '-bottom-width:' + values[key] + '}';
-				classes[px + 'l-' + key] = '{' + prop + '-left-width:' + values[key] + '}';
-				classes[px + 'r-' + key] = '{' + prop + '-right-width:' + values[key] + '}';
+				classes[px + '-' + key] = '{border-width:' + values[key] + '}';
+				classes[px + 'y-' + key] = '{border-top-width:' + values[key] + ';border-bottom-width:' + values[key] + '}';
+				classes[px + 'x-' + key] = '{border-left-width:' + values[key] + ';border-right-width:' + values[key] + '}';
+				classes[px + 't-' + key] = '{border-top-width:' + values[key] + '}';
+				classes[px + 'b-' + key] = '{border-bottom-width:' + values[key] + '}';
+				classes[px + 'l-' + key] = '{border-left-width:' + values[key] + '}';
+				classes[px + 'r-' + key] = '{border-right-width:' + values[key] + '}';
 			}
 		},
 		'@keyframes': function (prop) {
